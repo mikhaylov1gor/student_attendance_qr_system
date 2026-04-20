@@ -19,11 +19,12 @@ import { ApiError } from '../api/client';
 import { catalogApi, sessionsApi } from '../api/endpoints';
 import type { CreateSessionRequest } from '../api/types';
 
+// Mantine 9 DateTimePicker отдаёт строку (`YYYY-MM-DD HH:mm:ss`), а не Date.
 type FormValues = {
     course_id: string | null;
     classroom_id: string | null;
-    starts_at: Date | null;
-    ends_at: Date | null;
+    starts_at: string | null;
+    ends_at: string | null;
     group_ids: string[];
     qr_ttl_seconds: number | null;
 };
@@ -57,7 +58,8 @@ export function SessionCreatePage() {
             starts_at: (v) => (v ? null : 'Укажите начало'),
             ends_at: (v, values) => {
                 if (!v) return 'Укажите окончание';
-                if (values.starts_at && v <= values.starts_at) return 'Окончание должно быть позже начала';
+                if (values.starts_at && new Date(v) <= new Date(values.starts_at))
+                    return 'Окончание должно быть позже начала';
                 return null;
             },
             group_ids: (v) => (v.length > 0 ? null : 'Выберите хотя бы одну группу'),
@@ -104,8 +106,8 @@ export function SessionCreatePage() {
         createMut.mutate({
             course_id: v.course_id!,
             classroom_id: v.classroom_id || undefined,
-            starts_at: v.starts_at!.toISOString(),
-            ends_at: v.ends_at!.toISOString(),
+            starts_at: new Date(v.starts_at!).toISOString(),
+            ends_at: new Date(v.ends_at!).toISOString(),
             group_ids: v.group_ids,
             qr_ttl_seconds: v.qr_ttl_seconds ?? undefined,
         });

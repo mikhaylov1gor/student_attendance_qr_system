@@ -18,7 +18,12 @@ import { useDisclosure } from '@mantine/hooks';
 import { notifications } from '@mantine/notifications';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import { useEffect, useMemo, useState } from 'react';
-import QRCode from 'react-qr-code';
+import QRCodeImport from 'react-qr-code';
+
+// Vite + CJS-default interop: в dev `react-qr-code` иногда приходит как
+// { default: Fn }, в prod — как Fn. Берём default, если он есть, иначе сам модуль.
+const QRCode =
+    (QRCodeImport as unknown as { default?: typeof QRCodeImport }).default ?? QRCodeImport;
 import { useNavigate, useParams } from 'react-router-dom';
 
 import { ApiError } from '../api/client';
