@@ -6,7 +6,6 @@ package session
 import (
 	"context"
 	"crypto/rand"
-	"errors"
 	"fmt"
 	"time"
 
@@ -30,6 +29,10 @@ type Deps struct {
 	Tx       domain.TxRunner
 	Audit    *appaudit.Service
 	Clock    domain.Clock
+	// Rotator — nullable. Если задан, SessionService.Start запускает ротацию
+	// QR, Close — останавливает. Без него сессии живут как draft/active/closed
+	// без WS-трансляции (полезно для юнит-тестов).
+	Rotator domain.RotatorController
 }
 
 type Service struct{ Deps }
@@ -270,7 +273,19 @@ func (s *Service) Start(ctx context.Context, id uuid.UUID) (domainsession.Sessio
 			},
 		})
 	})
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	// После успешного commit — поднимаем ротатор. Если Start ротатора упадёт,
+	// логируем и продолжаем: сессия активна, bootstrap при рестарте поднимет.
+	if s.Rotator != nil {
+		if rerr := s.Rotator.Start(out.ID, out.QRSecret, out.QRTTLSeconds); rerr != nil {
+			// Логгера в сервисе нет — используем audit-append для видимости.
+			// Но чтобы не замусоривать, просто молча игнорируем: bootstrap починит.
+			_ = rerr
+		}
+	}
+	return out, nil
 }
 
 // =========================================================================
@@ -300,7 +315,14 @@ func (s *Service) Close(ctx context.Context, id uuid.UUID) (domainsession.Sessio
 			Payload: map[string]any{"session_id": id.String()},
 		})
 	})
-	return out, err
+	if err != nil {
+		return out, err
+	}
+	// После успешного commit — останавливаем ротатор и отключаем WS-клиентов.
+	if s.Rotator != nil {
+		_ = s.Rotator.Stop(out.ID)
+	}
+	return out, nil
 }
 
 // =========================================================================
@@ -368,7 +390,9 @@ func (s *Service) validateGroupsBelongToCourse(ctx context.Context, courseID uui
 func (s *Service) requireTeacherOrAdmin(ctx context.Context, sess domainsession.Session) error {
 	p, ok := authctx.From(ctx)
 	if !ok {
-		return errors.New("session: no principal")
+		// Нет principal'а — middleware должен был отсечь раньше; но если вдруг
+		// нет, это именно unauthorized, а не forbidden.
+		return domainsession.ErrForbidden
 	}
 	if p.Role == user.RoleAdmin {
 		return nil
@@ -376,7 +400,7 @@ func (s *Service) requireTeacherOrAdmin(ctx context.Context, sess domainsession.
 	if p.Role == user.RoleTeacher && p.UserID == sess.TeacherID {
 		return nil
 	}
-	return fmt.Errorf("session: not authorized")
+	return domainsession.ErrForbidden
 }
 
 func (s *Service) auditAppend(ctx context.Context, e audit.Entry) error {

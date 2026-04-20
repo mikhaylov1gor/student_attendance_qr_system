@@ -2,7 +2,6 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -33,16 +32,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	pair, _, err := h.svc.Login(r.Context(), req.Email, req.Password)
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrInvalidCredentials):
-			httperr.Write(w, http.StatusUnauthorized, "invalid_credentials", "wrong email or password")
-		default:
-			httperr.LogUnexpected(h.log, r, err)
-			httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-		}
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
-
 	httperr.WriteJSON(w, http.StatusOK, tokenResponse(pair))
 }
 
@@ -55,20 +47,9 @@ func (h *AuthHandler) Refresh(w http.ResponseWriter, r *http.Request) {
 
 	pair, _, err := h.svc.Refresh(r.Context(), req.RefreshToken)
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrInvalidToken):
-			httperr.Write(w, http.StatusUnauthorized, "invalid_token", "refresh token invalid")
-		case errors.Is(err, auth.ErrTokenExpired):
-			httperr.Write(w, http.StatusUnauthorized, "token_expired", "refresh token expired")
-		case errors.Is(err, auth.ErrTokenRevoked):
-			httperr.Write(w, http.StatusUnauthorized, "token_revoked", "refresh token revoked")
-		default:
-			httperr.LogUnexpected(h.log, r, err)
-			httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-		}
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
-
 	httperr.WriteJSON(w, http.StatusOK, tokenResponse(pair))
 }
 
@@ -78,15 +59,12 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if err := dto.Decode(w, r, &req); err != nil {
 		return
 	}
-
 	if _, err := authctx.Require(r.Context()); err != nil {
-		httperr.Write(w, http.StatusUnauthorized, "unauthorized", "no principal")
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
-
 	if err := h.svc.Logout(r.Context(), req.RefreshToken); err != nil {
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -96,19 +74,13 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	p, err := authctx.Require(r.Context())
 	if err != nil {
-		httperr.Write(w, http.StatusUnauthorized, "unauthorized", "no principal")
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 
 	u, err := h.svc.CurrentUser(r.Context(), p)
 	if err != nil {
-		switch {
-		case errors.Is(err, auth.ErrUnauthorized):
-			httperr.Write(w, http.StatusUnauthorized, "unauthorized", "user no longer exists")
-		default:
-			httperr.LogUnexpected(h.log, r, err)
-			httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-		}
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 

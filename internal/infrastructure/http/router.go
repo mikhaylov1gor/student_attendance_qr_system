@@ -16,14 +16,21 @@ import (
 
 // Deps — всё, что нужно роутеру для регистрации маршрутов.
 type Deps struct {
-	Log      *slog.Logger
-	Signer   auth.AccessTokenSigner
-	AuthH    *handlers.AuthHandler
-	PolicyH  *handlers.PolicyHandler
-	AuditH   *handlers.AuditHandler
-	CatalogH *handlers.CatalogHandler
-	SessionH *handlers.SessionHandler
-	Health   http.HandlerFunc // /healthz handler
+	Log          *slog.Logger
+	Signer       auth.AccessTokenSigner
+	AuthH        *handlers.AuthHandler
+	PolicyH      *handlers.PolicyHandler
+	AuditH       *handlers.AuditHandler
+	CatalogH     *handlers.CatalogHandler
+	SessionH     *handlers.SessionHandler
+	AttendanceH  *handlers.AttendanceHandler
+	UserH        *handlers.UserHandler
+	StudentMeH   *handlers.StudentMeHandler
+	ReportH      *handlers.ReportHandler
+	WSHandler    http.HandlerFunc // teacher-WS хендлер
+	Health       http.HandlerFunc // /healthz handler
+	CORSOrigins  []string         // nil/empty → CORS выключен
+	LoginLimiter *appmid.IPRateLimiter
 }
 
 // NewRouter собирает chi-роутер: middleware, public-роуты, protected-роуты.
@@ -36,12 +43,22 @@ func NewRouter(d Deps) *chi.Mux {
 	r.Use(appmid.RequestMeta())
 	r.Use(appmid.SlogLogger(d.Log))
 
+	// CORS — один глобальный middleware до всех роутов, включая WS.
+	if len(d.CORSOrigins) > 0 {
+		r.Use(appmid.CORS(d.CORSOrigins))
+	}
+
 	// Public
 	r.Get("/healthz", d.Health)
 
 	r.Route("/api/v1", func(r chi.Router) {
 		r.Route("/auth", func(r chi.Router) {
-			r.Post("/login", d.AuthH.Login)
+			// Login под rate-limit'ом по IP (brute-force защита).
+			if d.LoginLimiter != nil {
+				r.With(d.LoginLimiter.Handle).Post("/login", d.AuthH.Login)
+			} else {
+				r.Post("/login", d.AuthH.Login)
+			}
 			r.Post("/refresh", d.AuthH.Refresh)
 
 			// Logout/Me требуют access-токен.
@@ -148,9 +165,50 @@ func NewRouter(d Deps) *chi.Mux {
 			r.Delete("/{id}", d.SessionH.Delete)
 			r.Post("/{id}/start", d.SessionH.Start)
 			r.Post("/{id}/close", d.SessionH.Close)
-			r.Get("/{id}/attendance", d.SessionH.Attendance) // 501 до stage 9
+			r.Get("/{id}/attendance", d.SessionH.Attendance) // заготовка
+		})
+
+		// Attendance — только студент (преподаватель смотрит через WS + /sessions/:id/attendance).
+		r.Route("/attendance", func(r chi.Router) {
+			r.Use(appmid.Auth(d.Signer))
+			r.Use(appmid.RequireRole(user.RoleStudent))
+			r.Post("/", d.AttendanceH.Submit)
+		})
+
+		// Admin-only CRUD пользователей.
+		r.Route("/users", func(r chi.Router) {
+			r.Use(appmid.Auth(d.Signer))
+			r.Use(appmid.RequireRole(user.RoleAdmin))
+			r.Get("/", d.UserH.List)
+			r.Post("/", d.UserH.Create)
+			r.Get("/{id}", d.UserH.Get)
+			r.Patch("/{id}", d.UserH.Update)
+			r.Delete("/{id}", d.UserH.Delete)
+			r.Post("/{id}/reset-password", d.UserH.ResetPassword)
+		})
+
+		// Self-service для студента.
+		r.Route("/students/me", func(r chi.Router) {
+			r.Use(appmid.Auth(d.Signer))
+			r.Use(appmid.RequireRole(user.RoleStudent))
+			r.Get("/attendance", d.StudentMeH.Attendance)
+			r.Get("/stats", d.StudentMeH.Stats)
+		})
+
+		// Отчёты — teacher + admin. Teacher автоматически ограничен своими
+		// сессиями на уровне handler'а.
+		r.Route("/reports", func(r chi.Router) {
+			r.Use(appmid.Auth(d.Signer))
+			r.Use(appmid.RequireRole(user.RoleTeacher, user.RoleAdmin))
+			r.Get("/attendance.{format}", d.ReportH.Attendance)
 		})
 	})
+
+	// WebSocket teacher-канал. JWT идёт через Sec-WebSocket-Protocol,
+	// поэтому не подключаем Auth-middleware — он требует Authorization-header.
+	if d.WSHandler != nil {
+		r.Get("/ws/sessions/{id}/teacher", d.WSHandler)
+	}
 
 	// 404 / 405 в унифицированном формате.
 	r.NotFound(func(w http.ResponseWriter, _ *http.Request) {

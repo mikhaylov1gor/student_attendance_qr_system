@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -47,7 +46,7 @@ func (h *UserHandler) Create(w http.ResponseWriter, r *http.Request) {
 		GroupID:  req.GroupID,
 	})
 	if err != nil {
-		h.writeUserError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 
@@ -104,7 +103,7 @@ func (h *UserHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
-		h.writeUserError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.UserFromDomain(u))
@@ -138,7 +137,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 	if req.Last != nil || req.First != nil || req.Middle != nil {
 		cur, err := h.svc.GetByID(r.Context(), id)
 		if err != nil {
-			h.writeUserError(w, r, err)
+			httperr.RespondError(w, r, h.log, err)
 			return
 		}
 		last, first, middle := cur.FullName.Last, cur.FullName.First, cur.FullName.Middle
@@ -161,7 +160,7 @@ func (h *UserHandler) Update(w http.ResponseWriter, r *http.Request) {
 
 	u, err := h.svc.Update(r.Context(), id, in)
 	if err != nil {
-		h.writeUserError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.UserFromDomain(u))
@@ -177,7 +176,7 @@ func (h *UserHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		h.writeUserError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -194,35 +193,10 @@ func (h *UserHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	temp, err := h.svc.ResetPassword(r.Context(), id)
 	if err != nil {
-		h.writeUserError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.ResetPasswordResponse{TempPassword: temp})
-}
-
-// =========================================================================
-// error mapping
-// =========================================================================
-
-func (h *UserHandler) writeUserError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, user.ErrNotFound):
-		httperr.Write(w, http.StatusNotFound, "user_not_found", "user not found")
-	case errors.Is(err, user.ErrEmailTaken):
-		httperr.Write(w, http.StatusConflict, "email_taken", "email already in use")
-	case errors.Is(err, user.ErrInvalidRole):
-		httperr.Write(w, http.StatusBadRequest, "invalid_role", err.Error())
-	case errors.Is(err, user.ErrRoleGroupMismatch):
-		httperr.Write(w, http.StatusBadRequest, "role_group_mismatch",
-			"current_group_id is required for students and forbidden for other roles")
-	case errors.Is(err, user.ErrFullNameRequired):
-		httperr.Write(w, http.StatusBadRequest, "invalid_full_name", err.Error())
-	case errors.Is(err, user.ErrFullNameTooLong):
-		httperr.Write(w, http.StatusBadRequest, "invalid_full_name", err.Error())
-	default:
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-	}
 }
 
 func parseIntOr(s string, def int) int {

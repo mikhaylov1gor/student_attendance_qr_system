@@ -1,14 +1,11 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
 
 	appattendance "attendance/internal/application/attendance"
-	"attendance/internal/domain/attendance"
-	"attendance/internal/domain/session"
 	"attendance/internal/infrastructure/http/dto"
 	"attendance/internal/infrastructure/http/httperr"
 )
@@ -40,22 +37,8 @@ func (h *AttendanceHandler) Submit(w http.ResponseWriter, r *http.Request) {
 		ClientTime: clientTime,
 	})
 	if err != nil {
-		h.writeErr(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.AttendanceFromDomain(res.Record, res.Checks))
-}
-
-func (h *AttendanceHandler) writeErr(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, attendance.ErrInvalidQRToken):
-		httperr.Write(w, http.StatusBadRequest, "invalid_qr_token", "qr token invalid or malformed")
-	case errors.Is(err, attendance.ErrAlreadySubmitted):
-		httperr.Write(w, http.StatusConflict, "already_submitted", "attendance already submitted for this session")
-	case errors.Is(err, session.ErrNotAcceptingAttendance):
-		httperr.Write(w, http.StatusConflict, "session_not_accepting", "session is not active or out of time range")
-	default:
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-	}
 }

@@ -1,14 +1,12 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
 
 	appcatalog "attendance/internal/application/catalog"
-	"attendance/internal/domain/catalog"
 	"attendance/internal/infrastructure/http/dto"
 	"attendance/internal/infrastructure/http/httperr"
 )
@@ -47,7 +45,7 @@ func (h *CatalogHandler) GetCourse(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.svc.GetCourse(r.Context(), id)
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.CourseFromDomain(c))
@@ -60,7 +58,7 @@ func (h *CatalogHandler) CreateCourse(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.svc.CreateCourse(r.Context(), appcatalog.CreateCourseInput{Name: req.Name, Code: req.Code})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusCreated, dto.CourseFromDomain(c))
@@ -77,7 +75,7 @@ func (h *CatalogHandler) UpdateCourse(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.svc.UpdateCourse(r.Context(), id, appcatalog.UpdateCourseInput{Name: req.Name, Code: req.Code})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.CourseFromDomain(c))
@@ -89,7 +87,7 @@ func (h *CatalogHandler) DeleteCourse(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteCourse(r.Context(), id); err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -120,7 +118,7 @@ func (h *CatalogHandler) GetGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.svc.GetGroup(r.Context(), id)
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.GroupFromDomain(g))
@@ -133,7 +131,7 @@ func (h *CatalogHandler) CreateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.svc.CreateGroup(r.Context(), appcatalog.CreateGroupInput{Name: req.Name})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusCreated, dto.GroupFromDomain(g))
@@ -150,7 +148,7 @@ func (h *CatalogHandler) UpdateGroup(w http.ResponseWriter, r *http.Request) {
 	}
 	g, err := h.svc.UpdateGroup(r.Context(), id, appcatalog.UpdateGroupInput{Name: req.Name})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.GroupFromDomain(g))
@@ -162,7 +160,7 @@ func (h *CatalogHandler) DeleteGroup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteGroup(r.Context(), id); err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -180,7 +178,7 @@ func (h *CatalogHandler) ListStreams(w http.ResponseWriter, r *http.Request) {
 	}
 	items, err := h.svc.ListStreamsByCourse(r.Context(), courseID)
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	out := dto.StreamListResponse{Total: len(items), Items: make([]dto.StreamResponse, 0, len(items))}
@@ -197,7 +195,7 @@ func (h *CatalogHandler) GetStream(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.svc.GetStream(r.Context(), id)
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.StreamFromDomain(s))
@@ -212,7 +210,7 @@ func (h *CatalogHandler) CreateStream(w http.ResponseWriter, r *http.Request) {
 		CourseID: req.CourseID, Name: req.Name, GroupIDs: req.GroupIDs,
 	})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusCreated, dto.StreamFromDomain(s))
@@ -231,7 +229,7 @@ func (h *CatalogHandler) UpdateStream(w http.ResponseWriter, r *http.Request) {
 		Name: req.Name, GroupIDs: req.GroupIDs,
 	})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.StreamFromDomain(s))
@@ -243,7 +241,7 @@ func (h *CatalogHandler) DeleteStream(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.DeleteStream(r.Context(), id); err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -274,7 +272,7 @@ func (h *CatalogHandler) GetClassroom(w http.ResponseWriter, r *http.Request) {
 	}
 	c, err := h.svc.GetClassroom(r.Context(), id)
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.ClassroomFromDomain(c))
@@ -294,7 +292,7 @@ func (h *CatalogHandler) CreateClassroom(w http.ResponseWriter, r *http.Request)
 		AllowedBSSIDs: req.AllowedBSSIDs,
 	})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusCreated, dto.ClassroomFromDomain(c))
@@ -318,7 +316,7 @@ func (h *CatalogHandler) UpdateClassroom(w http.ResponseWriter, r *http.Request)
 		AllowedBSSIDs: req.AllowedBSSIDs,
 	})
 	if err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.ClassroomFromDomain(c))
@@ -330,7 +328,7 @@ func (h *CatalogHandler) DeleteClassroom(w http.ResponseWriter, r *http.Request)
 		return
 	}
 	if err := h.svc.DeleteClassroom(r.Context(), id); err != nil {
-		h.writeCatalogError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -339,25 +337,6 @@ func (h *CatalogHandler) DeleteClassroom(w http.ResponseWriter, r *http.Request)
 // =========================================================================
 // helpers
 // =========================================================================
-
-func (h *CatalogHandler) writeCatalogError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, catalog.ErrCourseNotFound),
-		errors.Is(err, catalog.ErrGroupNotFound),
-		errors.Is(err, catalog.ErrStreamNotFound),
-		errors.Is(err, catalog.ErrClassroomNotFound):
-		httperr.Write(w, http.StatusNotFound, "not_found", err.Error())
-	case errors.Is(err, catalog.ErrCourseCodeTaken):
-		httperr.Write(w, http.StatusConflict, "course_code_taken", err.Error())
-	case errors.Is(err, catalog.ErrGroupNameTaken):
-		httperr.Write(w, http.StatusConflict, "group_name_taken", err.Error())
-	case errors.Is(err, catalog.ErrInUse):
-		httperr.Write(w, http.StatusConflict, "in_use", err.Error())
-	default:
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-	}
-}
 
 func parseUUIDQuery(w http.ResponseWriter, r *http.Request, name string) (uuid.UUID, bool) {
 	raw := r.URL.Query().Get(name)

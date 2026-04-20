@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 	"time"
@@ -9,8 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	appsession "attendance/internal/application/session"
-	"attendance/internal/domain/catalog"
-	"attendance/internal/domain/policy"
 	"attendance/internal/domain/session"
 	"attendance/internal/infrastructure/http/dto"
 	"attendance/internal/infrastructure/http/httperr"
@@ -40,7 +37,7 @@ func (h *SessionHandler) Create(w http.ResponseWriter, r *http.Request) {
 		QRTTLSeconds:     req.QRTTLSeconds,
 	})
 	if err != nil {
-		h.writeSessionError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusCreated, dto.SessionFromDomain(s))
@@ -74,7 +71,7 @@ func (h *SessionHandler) Update(w http.ResponseWriter, r *http.Request) {
 		QRTTLSeconds:     req.QRTTLSeconds,
 	})
 	if err != nil {
-		h.writeSessionError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.SessionFromDomain(s))
@@ -87,7 +84,7 @@ func (h *SessionHandler) Start(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.svc.Start(r.Context(), id)
 	if err != nil {
-		h.writeSessionError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.SessionFromDomain(s))
@@ -100,7 +97,7 @@ func (h *SessionHandler) Close(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.svc.Close(r.Context(), id)
 	if err != nil {
-		h.writeSessionError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.SessionFromDomain(s))
@@ -112,7 +109,7 @@ func (h *SessionHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		h.writeSessionError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -125,7 +122,7 @@ func (h *SessionHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	s, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
-		h.writeSessionError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.SessionFromDomain(s))
@@ -191,43 +188,3 @@ func (h *SessionHandler) List(w http.ResponseWriter, r *http.Request) {
 func (h *SessionHandler) Attendance(w http.ResponseWriter, r *http.Request) {
 	httperr.Write(w, http.StatusNotImplemented, "not_implemented", "attendance endpoints will be wired in stage 9")
 }
-
-// =========================================================================
-// error mapping
-// =========================================================================
-
-func (h *SessionHandler) writeSessionError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, session.ErrNotFound):
-		httperr.Write(w, http.StatusNotFound, "session_not_found", "session not found")
-	case errors.Is(err, session.ErrInvalidTimeRange):
-		httperr.Write(w, http.StatusBadRequest, "invalid_time_range", err.Error())
-	case errors.Is(err, session.ErrInvalidQRTTL):
-		httperr.Write(w, http.StatusBadRequest, "invalid_qr_ttl", err.Error())
-	case errors.Is(err, session.ErrGroupsEmpty):
-		httperr.Write(w, http.StatusBadRequest, "groups_empty", err.Error())
-	case errors.Is(err, session.ErrGroupsNotInCourse):
-		httperr.Write(w, http.StatusConflict, "groups_not_in_course_streams", err.Error())
-	case errors.Is(err, session.ErrInvalidStatusTransition):
-		httperr.Write(w, http.StatusConflict, "invalid_status_transition", err.Error())
-	case errors.Is(err, policy.ErrNotFound), errors.Is(err, policy.ErrNoDefault):
-		httperr.Write(w, http.StatusBadRequest, "policy_not_found", err.Error())
-	case errors.Is(err, catalog.ErrCourseNotFound),
-		errors.Is(err, catalog.ErrClassroomNotFound),
-		errors.Is(err, catalog.ErrGroupNotFound):
-		httperr.Write(w, http.StatusBadRequest, "catalog_not_found", err.Error())
-	case errors.Is(err, errNotAuthorized):
-		httperr.Write(w, http.StatusForbidden, "forbidden", err.Error())
-	default:
-		// Специальное "not authorized" возвращается через строковое сравнение —
-		// service уже возвращает стандартную ошибку. Проверим сигнатуру.
-		if err != nil && err.Error() == "session: not authorized" {
-			httperr.Write(w, http.StatusForbidden, "forbidden", "not authorized")
-			return
-		}
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-	}
-}
-
-var errNotAuthorized = errors.New("session: not authorized")

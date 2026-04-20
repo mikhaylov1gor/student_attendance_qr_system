@@ -30,6 +30,14 @@ type Config struct {
 	JWTIssuer          string        `env:"JWT_ISSUER"        envDefault:"attendance-api"`
 	JWTAccessTTL       time.Duration `env:"JWT_ACCESS_TTL"    envDefault:"15m"`
 	JWTRefreshTTL      time.Duration `env:"JWT_REFRESH_TTL"   envDefault:"168h"`
+
+	// CORS — comma-separated список разрешённых Origin'ов для фронта (SPA).
+	// Пустая строка → CORS выключен (API доступен только с того же origin'а).
+	CORSAllowedOrigins []string `env:"CORS_ALLOWED_ORIGINS" envSeparator:","`
+
+	// Rate limit на /auth/login.
+	LoginRateLimit       int           `env:"LOGIN_RATE_LIMIT"        envDefault:"10"`
+	LoginRateLimitWindow time.Duration `env:"LOGIN_RATE_LIMIT_WINDOW" envDefault:"1m"`
 }
 
 func Load() (Config, error) {

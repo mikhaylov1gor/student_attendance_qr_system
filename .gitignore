@@ -24,3 +24,7 @@ docker-compose.override.yml
 # Secrets
 *.pem
 *.key
+
+# Necessary
+/docs/presentation/*
+.claude

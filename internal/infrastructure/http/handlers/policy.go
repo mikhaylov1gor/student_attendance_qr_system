@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"errors"
 	"log/slog"
 	"net/http"
 
@@ -9,7 +8,6 @@ import (
 	"github.com/google/uuid"
 
 	apppolicy "attendance/internal/application/policy"
-	"attendance/internal/domain/policy"
 	"attendance/internal/infrastructure/http/dto"
 	"attendance/internal/infrastructure/http/httperr"
 	"attendance/internal/platform/authctx"
@@ -27,8 +25,7 @@ func NewPolicyHandler(svc *apppolicy.Service, log *slog.Logger) *PolicyHandler {
 func (h *PolicyHandler) List(w http.ResponseWriter, r *http.Request) {
 	items, err := h.svc.List(r.Context())
 	if err != nil {
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	resp := dto.PolicyListResponse{
@@ -48,7 +45,7 @@ func (h *PolicyHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := h.svc.GetByID(r.Context(), id)
 	if err != nil {
-		h.writePolicyError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.PolicyFromDomain(p))
@@ -59,13 +56,11 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	if err := dto.Decode(w, r, &req); err != nil {
 		return
 	}
-
 	principal, err := authctx.Require(r.Context())
 	if err != nil {
-		httperr.Write(w, http.StatusUnauthorized, "unauthorized", "no principal")
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
-
 	in := apppolicy.CreateInput{
 		Name:       req.Name,
 		Mechanisms: req.Mechanisms,
@@ -74,7 +69,7 @@ func (h *PolicyHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	p, err := h.svc.Create(r.Context(), in)
 	if err != nil {
-		h.writePolicyError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusCreated, dto.PolicyFromDomain(p))
@@ -94,7 +89,7 @@ func (h *PolicyHandler) Update(w http.ResponseWriter, r *http.Request) {
 		Mechanisms: req.Mechanisms,
 	})
 	if err != nil {
-		h.writePolicyError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	httperr.WriteJSON(w, http.StatusOK, dto.PolicyFromDomain(p))
@@ -106,7 +101,7 @@ func (h *PolicyHandler) Delete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.Delete(r.Context(), id); err != nil {
-		h.writePolicyError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -118,27 +113,10 @@ func (h *PolicyHandler) SetDefault(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.svc.SetDefault(r.Context(), id); err != nil {
-		h.writePolicyError(w, r, err)
+		httperr.RespondError(w, r, h.log, err)
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// writePolicyError маппит доменные ошибки в HTTP-коды.
-func (h *PolicyHandler) writePolicyError(w http.ResponseWriter, r *http.Request, err error) {
-	switch {
-	case errors.Is(err, policy.ErrNotFound):
-		httperr.Write(w, http.StatusNotFound, "policy_not_found", "policy not found")
-	case errors.Is(err, policy.ErrNameTaken):
-		httperr.Write(w, http.StatusConflict, "policy_name_taken", "policy name already used")
-	case errors.Is(err, policy.ErrDeletingDefault):
-		httperr.Write(w, http.StatusConflict, "policy_default_protected", "cannot delete default policy")
-	case errors.Is(err, policy.ErrInvalidConfig):
-		httperr.Write(w, http.StatusBadRequest, "invalid_config", err.Error())
-	default:
-		httperr.LogUnexpected(h.log, r, err)
-		httperr.Write(w, http.StatusInternalServerError, "internal", "internal error")
-	}
 }
 
 // parseUUIDParam — читает URL-параметр как uuid, пишет 400 в случае ошибки.

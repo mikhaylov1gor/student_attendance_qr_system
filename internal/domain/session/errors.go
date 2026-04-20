@@ -12,4 +12,5 @@ var (
 	ErrGroupsEmpty             = errors.New("session: at least one group is required")
 	ErrGroupsNotInCourse       = errors.New("session: selected groups do not belong to course streams")
 	ErrNotAcceptingAttendance  = errors.New("session: not accepting attendance")
+	ErrForbidden               = errors.New("session: not authorized to operate on this session")
 )

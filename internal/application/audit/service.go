@@ -49,6 +49,12 @@ func (s *Service) Append(ctx context.Context, e audit.Entry) (audit.Entry, error
 	if e.Payload == nil {
 		e.Payload = map[string]any{}
 	}
+	// Нормализуем все time.Time в payload до UTC+microsecond: gorm/json.Marshal
+	// сериализует time.Time в локальном TZ, а canonicalize для hash — в UTC.
+	// Без нормализации хэш расходится с round-trip'ом через JSONB.
+	if norm, ok := normalizePayloadTimes(e.Payload).(map[string]any); ok {
+		e.Payload = norm
+	}
 
 	last, ok, err := s.Repo.Last(ctx)
 	if err != nil {
@@ -77,6 +83,29 @@ type VerifyResult struct {
 	TotalEntries  int
 	FirstBrokenID *int64
 	BrokenReason  string
+}
+
+// normalizePayloadTimes проходит по payload'у рекурсивно и приводит все
+// time.Time к UTC с микросекундной точностью. Без этого шага хэш, посчитанный
+// на стороне Append (canonicalize→UTC), не совпадёт с хэшем при Verify: БД
+// через JSONB хранит строку, сериализованную json.Marshal'ом в ИСХОДНОМ TZ.
+func normalizePayloadTimes(v any) any {
+	switch val := v.(type) {
+	case time.Time:
+		return val.UTC().Truncate(time.Microsecond)
+	case map[string]any:
+		for k, inner := range val {
+			val[k] = normalizePayloadTimes(inner)
+		}
+		return val
+	case []any:
+		for i, inner := range val {
+			val[i] = normalizePayloadTimes(inner)
+		}
+		return val
+	default:
+		return val
+	}
 }
 
 // Verify пересчитывает hash-chain от начала до конца батчами. Первая
