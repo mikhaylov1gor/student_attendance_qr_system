@@ -1,0 +1,26 @@
+# Environment
+.env
+.env.local
+
+# Binaries
+/bin/
+*.exe
+
+# Go build artifacts
+*.test
+*.out
+*.prof
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+
+# Docker
+docker-compose.override.yml
+
+# Secrets
+*.pem
+*.key
