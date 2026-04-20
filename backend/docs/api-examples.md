@@ -212,6 +212,29 @@ curl -X POST $API/api/v1/attendance -H "Authorization: Bearer $STUDENT" \
 - `409 already_submitted` — студент уже отметился на этой сессии
 - `409 session_not_accepting` — сессия закрыта / вне времени
 
+## Teacher-override отметки (teacher + admin)
+
+`PATCH /api/v1/attendance/:id` — ручной перевод записи в `accepted` / `rejected`.
+Применяется к записям, которые автомат пометил `needs_review`. Teacher может
+override'ить только отметки своих сессий; admin — любые.
+
+```bash
+curl -X PATCH $API/api/v1/attendance/<aid> -H "Authorization: Bearer $TEACHER" \
+    -d '{"final_status":"accepted","notes":"подошёл лично, подтвердил присутствие"}'
+```
+
+Ответ: `AttendanceResponse` с заполненными `final_status`, `resolved_by`,
+`resolved_at`, `notes`, `effective_status`.
+
+Ошибки:
+- `400 invalid_final_status` — не `accepted` / `rejected`
+- `403 forbidden` — teacher пытается трогать чужую сессию
+- `404 attendance_not_found`
+- `409 not_resolvable` — уже resolved
+
+После успешного override в WS-канал сессии отправляется сообщение
+`{"type":"attendance_resolved","attendance_id":"<uuid>","final_status":"accepted","effective_status":"accepted"}`.
+
 ## WebSocket (teacher + admin)
 
 `ws://localhost:8080/ws/sessions/<sid>/teacher`

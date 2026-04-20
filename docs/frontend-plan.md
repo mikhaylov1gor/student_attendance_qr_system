@@ -71,9 +71,12 @@ kursovaya/
    - Для записей с `preliminary_status=needs_review` — кнопки Accept/Reject (PATCH `/attendance/:id` с `final_status` — этот endpoint нужно добавить в бэкенд, ниже).
 5. **Отчёт** — кнопка «Скачать xlsx» на сессии → `GET /reports/attendance.xlsx?session_id=...` с `Authorization`.
 
-### Открытый вопрос — teacher-ручной override
+### Teacher-ручной override — готов
 
-Сейчас в бэкенде есть `attendance.Resolve(id, finalStatus, ...)` в репо, но **нет HTTP-ручки**. Перед стартом фронта надо добавить `PATCH /api/v1/attendance/:id` (teacher-only, только для сессий которые он ведёт). ~30 минут работы в бэке.
+`PATCH /api/v1/attendance/:id` (teacher/admin). Body: `{"final_status":"accepted|rejected","notes":"..."}`.
+Teacher может трогать только свои сессии (ownership проверяется в сервисе → 403).
+После override в WS-канал летит `{"type":"attendance_resolved", ...}` — live-экран подтягивает
+новое состояние без refetch'а. Подробности: [../backend/docs/api-examples.md#teacher-override-отметки-teacher--admin](../backend/docs/api-examples.md).
 
 ## Admin SPA (порт :5174)
 

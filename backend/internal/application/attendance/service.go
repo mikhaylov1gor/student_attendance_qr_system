@@ -28,9 +28,11 @@ import (
 	"attendance/internal/domain"
 	"attendance/internal/domain/attendance"
 	"attendance/internal/domain/audit"
+	"attendance/internal/domain/auth"
 	"attendance/internal/domain/catalog"
 	"attendance/internal/domain/policy"
 	"attendance/internal/domain/session"
+	"attendance/internal/domain/user"
 	"attendance/internal/platform/authctx"
 	"attendance/internal/platform/requestmeta"
 )
@@ -247,6 +249,112 @@ func (s *Service) auditAppend(ctx context.Context, e audit.Entry) error {
 	e.UserAgent = meta.UserAgent
 	_, err := s.Audit.Append(ctx, e)
 	return err
+}
+
+// ResolveInput — параметры teacher-override.
+type ResolveInput struct {
+	AttendanceID uuid.UUID
+	FinalStatus  attendance.Status
+	Notes        string
+}
+
+// Resolve выставляет final_status преподавателем/админом.
+//
+// Invariants:
+//   - final_status ∈ {accepted, rejected} (needs_review запрещён — см. CHECK
+//     attendance_final_status_check);
+//   - право на override: admin всегда, teacher — только если sess.TeacherID == principal;
+//   - идемпотентности нет: если запись уже resolved, возвращаем ErrNotResolvable.
+//
+// В одной транзакции: Attendance.Resolve + audit.Append (ActionAttendanceResolved).
+// После commit — broadcast `{type:"attendance_resolved"}` по WS, чтобы teacher-live
+// экран подтянул новое состояние без refetch'а.
+func (s *Service) Resolve(ctx context.Context, in ResolveInput) (SubmitResult, error) {
+	principal, err := authctx.Require(ctx)
+	if err != nil {
+		return SubmitResult{}, err
+	}
+	if !in.FinalStatus.IsValidFinal() {
+		return SubmitResult{}, attendance.ErrInvalidFinal
+	}
+
+	var out SubmitResult
+	err = s.Tx.Run(ctx, func(txCtx context.Context) error {
+		rec, checks, err := s.Attendance.GetByID(txCtx, in.AttendanceID)
+		if err != nil {
+			return err
+		}
+		sess, err := s.Sessions.GetByID(txCtx, rec.SessionID)
+		if err != nil {
+			return err
+		}
+		if !canOverride(principal, sess.TeacherID) {
+			return session.ErrForbidden
+		}
+
+		if err := s.Attendance.Resolve(txCtx, rec.ID, in.FinalStatus, principal.UserID, in.Notes); err != nil {
+			return err
+		}
+
+		// Re-read, чтобы вернуть клиенту актуальные resolved_at/resolved_by/notes.
+		rec, checks, err = s.Attendance.GetByID(txCtx, rec.ID)
+		if err != nil {
+			return err
+		}
+		out = SubmitResult{Record: rec, Checks: checks}
+
+		return s.auditAppend(txCtx, audit.Entry{
+			ActorID:    &principal.UserID,
+			ActorRole:  string(principal.Role),
+			Action:     audit.ActionAttendanceResolved,
+			EntityType: "attendance",
+			EntityID:   rec.ID.String(),
+			Payload: map[string]any{
+				"attendance_id":      rec.ID.String(),
+				"session_id":         rec.SessionID.String(),
+				"student_id":         rec.StudentID.String(),
+				"preliminary_status": string(rec.PreliminaryStatus),
+				"final_status":       string(in.FinalStatus),
+				"has_notes":          in.Notes != "",
+			},
+		})
+	})
+	if err != nil {
+		return SubmitResult{}, err
+	}
+
+	s.broadcastResolved(ctx, out.Record)
+	return out, nil
+}
+
+func canOverride(p auth.Principal, teacherID uuid.UUID) bool {
+	if p.Role == user.RoleAdmin {
+		return true
+	}
+	return p.Role == user.RoleTeacher && p.UserID == teacherID
+}
+
+func (s *Service) broadcastResolved(ctx context.Context, r attendance.Record) {
+	payload := map[string]any{
+		"type":             "attendance_resolved",
+		"attendance_id":    r.ID.String(),
+		"session_id":       r.SessionID.String(),
+		"student_id":       r.StudentID.String(),
+		"final_status":     statusString(r.FinalStatus),
+		"effective_status": string(r.EffectiveStatus()),
+	}
+	data, err := json.Marshal(payload)
+	if err != nil {
+		return
+	}
+	s.Hub.Broadcast(ctx, r.SessionID, data)
+}
+
+func statusString(s *attendance.Status) string {
+	if s == nil {
+		return ""
+	}
+	return string(*s)
 }
 
 func summarizeChecks(rs []policy.CheckResult) []map[string]any {

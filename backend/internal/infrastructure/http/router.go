@@ -168,11 +168,18 @@ func NewRouter(d Deps) *chi.Mux {
 			r.Get("/{id}/attendance", d.SessionH.Attendance) // заготовка
 		})
 
-		// Attendance — только студент (преподаватель смотрит через WS + /sessions/:id/attendance).
+		// Attendance — POST открыт только студенту (отметка по QR).
+		// PATCH /:id — teacher/admin override (ownership проверяется в сервисе).
 		r.Route("/attendance", func(r chi.Router) {
 			r.Use(appmid.Auth(d.Signer))
-			r.Use(appmid.RequireRole(user.RoleStudent))
-			r.Post("/", d.AttendanceH.Submit)
+			r.Group(func(pr chi.Router) {
+				pr.Use(appmid.RequireRole(user.RoleStudent))
+				pr.Post("/", d.AttendanceH.Submit)
+			})
+			r.Group(func(pr chi.Router) {
+				pr.Use(appmid.RequireRole(user.RoleTeacher, user.RoleAdmin))
+				pr.Patch("/{id}", d.AttendanceH.Resolve)
+			})
 		})
 
 		// Admin-only CRUD пользователей.
